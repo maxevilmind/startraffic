@@ -8,6 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import DOMAIN
+from .api import GoogleMapsAPI
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -19,6 +20,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Store the API key in hass.data
         hass.data.setdefault(DOMAIN, {})
         hass.data[DOMAIN][entry.entry_id] = {}
+
+        # Initialize the API client
+        api_key = entry.data.get("api_key")
+        if not api_key:
+            raise ValueError("API key is required")
+        
+        api = GoogleMapsAPI(api_key)
+        hass.data[DOMAIN][entry.entry_id]["api"] = api
 
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
         return True

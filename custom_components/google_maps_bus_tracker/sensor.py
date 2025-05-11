@@ -23,12 +23,11 @@ from homeassistant.helpers.update_coordinator import (
 
 from .const import (
     DOMAIN,
-    CONF_API_KEY,
     CONF_ORIGIN,
     CONF_DESTINATION,
     CONF_ROUTE_NUMBER,
 )
-from .api import GoogleMapsAPI, GoogleMapsAPIError
+from .api import GoogleMapsAPIError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -59,12 +58,15 @@ async def async_setup_entry(
 ) -> None:
     """Set up the Bus Tracker sensor from a config entry."""
     try:
-        api_key = config_entry.data[CONF_API_KEY]
         origin = config_entry.data[CONF_ORIGIN]
         destination = config_entry.data[CONF_DESTINATION]
         route_number = config_entry.data[CONF_ROUTE_NUMBER]
 
-        api = GoogleMapsAPI(api_key)
+        # Get the API instance from hass.data
+        api = hass.data[DOMAIN][config_entry.entry_id]["api"]
+        if not api:
+            raise ValueError("API client not initialized")
+
         coordinator = BusTrackerCoordinator(
             hass,
             api,
@@ -79,9 +81,6 @@ async def async_setup_entry(
             BusTrackerSensor(coordinator, description)
             for description in SENSOR_TYPES.values()
         )
-
-        # Store the API instance for cleanup
-        hass.data[DOMAIN][config_entry.entry_id]["api"] = api
     except Exception as err:
         _LOGGER.error("Error setting up Bus Tracker sensors: %s", err)
         raise
