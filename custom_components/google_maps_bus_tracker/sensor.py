@@ -76,6 +76,12 @@ async def async_setup_entry(
             _LOGGER.error("Missing required configuration parameters")
             return
 
+        # Store bus route in hass.data
+        hass.data[DOMAIN][config_entry.entry_id]["bus_routes"][route_number] = {
+            CONF_ORIGIN: origin,
+            CONF_DESTINATION: destination,
+        }
+
         # Create coordinator for this bus route
         coordinator = BusTrackerCoordinator(
             hass,
@@ -99,79 +105,24 @@ async def async_setup_entry(
 
         _LOGGER.info("Created entities for bus route %s", route_number)
 
-        # Register services
-        async def async_handle_track_bus(call: ServiceCall) -> None:
-            """Handle the track_bus service call."""
-            route_number = call.data.get(CONF_ROUTE_NUMBER)
-            origin = call.data.get(CONF_ORIGIN)
-            destination = call.data.get(CONF_DESTINATION)
+        # Register service for this bus route
+        async def async_handle_bus_route_service(call: ServiceCall) -> None:
+            """Handle service calls for this bus route."""
+            service = call.service
+            if service == "get_info":
+                _LOGGER.info("Bus route %s info: %s", route_number, coordinator.data)
+            elif service == "update_route":
+                if CONF_ORIGIN in call.data:
+                    coordinator.origin = call.data[CONF_ORIGIN]
+                if CONF_DESTINATION in call.data:
+                    coordinator.destination = call.data[CONF_DESTINATION]
+                await coordinator.async_refresh()
 
-            if not all([route_number, origin, destination]):
-                _LOGGER.error("Missing required parameters")
-                return
-
-            # Check if we already have a coordinator for this route
-            if route_number in hass.data[DOMAIN][config_entry.entry_id]["coordinators"]:
-                _LOGGER.warning("Bus route %s is already being tracked", route_number)
-                return
-
-            # Create coordinator for this bus route
-            coordinator = BusTrackerCoordinator(
-                hass,
-                api,
-                origin,
-                destination,
-                route_number,
-            )
-
-            # Create entities for this bus route
-            entities = [
-                BusTrackerSensor(coordinator, description)
-                for description in SENSOR_TYPES.values()
-            ]
-
-            # Add entities to Home Assistant
-            async_add_entities(entities)
-
-            # Store coordinator in hass.data
-            hass.data[DOMAIN][config_entry.entry_id]["coordinators"][route_number] = coordinator
-
-            _LOGGER.info("Started tracking bus route %s", route_number)
-
-        async def async_handle_untrack_bus(call: ServiceCall) -> None:
-            """Handle the untrack_bus service call."""
-            route_number = call.data.get(CONF_ROUTE_NUMBER)
-            if not route_number:
-                _LOGGER.error("Missing route number")
-                return
-
-            # Get the entity registry
-            registry = er.async_get(hass)
-            
-            # Remove all entities for this route
-            for sensor_type in SENSOR_TYPES:
-                entity_id = f"sensor.bus_{route_number}_{sensor_type}"
-                if entity := registry.async_get(entity_id):
-                    registry.async_remove(entity.entity_id)
-
-            # Remove coordinator
-            if route_number in hass.data[DOMAIN][config_entry.entry_id]["coordinators"]:
-                coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinators"][route_number]
-                await coordinator.async_shutdown()
-                hass.data[DOMAIN][config_entry.entry_id]["coordinators"].pop(route_number)
-                _LOGGER.info("Stopped tracking bus route %s", route_number)
-
-        # Register services
+        # Register service for this bus route
         hass.services.async_register(
             DOMAIN,
-            "track_bus",
-            async_handle_track_bus,
-        )
-
-        hass.services.async_register(
-            DOMAIN,
-            "untrack_bus",
-            async_handle_untrack_bus,
+            f"bus_{route_number}",
+            async_handle_bus_route_service,
         )
 
     except Exception as err:

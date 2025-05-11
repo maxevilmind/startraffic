@@ -22,7 +22,45 @@ google_maps_bus_tracker:
       description: Destination coordinates (latitude,longitude)
       required: true
       selector:
-        text: 
+        text:
+
+reload:
+  name: Reload
+  description: Reload the integration configuration
+
+get_bus_info:
+  name: Get Bus Info
+  description: Get information about a tracked bus route
+  fields:
+    route_number:
+      name: Route Number
+      description: The bus route number to get information for
+      required: true
+      selector:
+        text:
+
+update_bus_route:
+  name: Update Bus Route
+  description: Update the configuration of a bus route
+  fields:
+    route_number:
+      name: Route Number
+      description: The bus route number to update
+      required: true
+      selector:
+        text:
+    origin:
+      name: Origin
+      description: New origin coordinates (latitude,longitude)
+      required: false
+      selector:
+        text:
+    destination:
+      name: Destination
+      description: New destination coordinates (latitude,longitude)
+      required: false
+      selector:
+        text:
 
 track_bus:
   name: Track Bus
