@@ -119,10 +119,23 @@ async def async_setup_entry(
                 await coordinator.async_refresh()
 
         # Register service for this bus route
+        service_name = f"bus_{route_number}"
         hass.services.async_register(
             DOMAIN,
-            f"bus_{route_number}",
+            service_name,
             async_handle_bus_route_service,
+        )
+
+        # Register the service in the services.yaml
+        hass.services.async_register(
+            DOMAIN,
+            service_name,
+            async_handle_bus_route_service,
+            schema=vol.Schema({
+                vol.Optional("service"): vol.In(["get_info", "update_route"]),
+                vol.Optional(CONF_ORIGIN): cv.string,
+                vol.Optional(CONF_DESTINATION): cv.string,
+            })
         )
 
     except Exception as err:

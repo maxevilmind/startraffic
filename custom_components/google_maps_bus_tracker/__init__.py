@@ -20,9 +20,47 @@ from .api import GoogleMapsAPI
 
 _LOGGER = logging.getLogger(__name__)
 
-CONFIG_SCHEMA = vol.Schema({})
+# Define the configuration schema
+CONFIG_SCHEMA = vol.Schema({
+    DOMAIN: vol.All(
+        cv.ensure_list,
+        [
+            vol.Schema({
+                vol.Required(CONF_ROUTE_NUMBER): cv.string,
+                vol.Required(CONF_ORIGIN): cv.string,
+                vol.Required(CONF_DESTINATION): cv.string,
+            })
+        ]
+    )
+})
 
 PLATFORMS = [Platform.SENSOR]
+
+async def async_setup(hass: HomeAssistant, config: Dict[str, Any]) -> bool:
+    """Set up the Google Maps Bus Tracker component."""
+    if DOMAIN not in config:
+        return True
+
+    hass.data.setdefault(DOMAIN, {})
+    
+    # Create config entries for each bus route
+    for bus_config in config[DOMAIN]:
+        # Create a unique entry ID
+        entry_id = f"{bus_config[CONF_ROUTE_NUMBER]}"
+        
+        # Create config entry
+        entry = ConfigEntry(
+            entry_id=entry_id,
+            domain=DOMAIN,
+            title=f"Bus {bus_config[CONF_ROUTE_NUMBER]}",
+            data=bus_config,
+            source="import",
+        )
+        
+        # Add entry to hass
+        hass.config_entries.async_add_entry(entry)
+        
+    return True
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Google Maps Bus Tracker from a config entry."""
@@ -82,7 +120,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # Reload the integration to apply changes
             await hass.config_entries.async_reload(entry.entry_id)
 
-        # Register services
+        # Register main services
         hass.services.async_register(DOMAIN, "reload", async_handle_reload)
         hass.services.async_register(DOMAIN, "get_bus_info", async_handle_get_bus_info)
         hass.services.async_register(DOMAIN, "update_bus_route", async_handle_update_bus_route)
