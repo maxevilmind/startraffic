@@ -42,6 +42,15 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Clean up API session
         if api := hass.data[DOMAIN][entry.entry_id].get("api"):
             await api.close()
+        
+        # Clean up coordinators
+        if coordinators := hass.data[DOMAIN][entry.entry_id].get("coordinators"):
+            for coordinator in coordinators.values():
+                await coordinator.async_shutdown()
+        
+        # Remove service
+        hass.services.async_remove(DOMAIN, "track_bus")
+        
         hass.data[DOMAIN].pop(entry.entry_id)
 
     return unload_ok 

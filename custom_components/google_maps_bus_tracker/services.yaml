@@ -1,0 +1,25 @@
+google_maps_bus_tracker:
+  name: Google Maps Bus Tracker
+  description: Track bus information using Google Maps API
+  target:
+    entity:
+      integration: google_maps_bus_tracker
+  fields:
+    route_number:
+      name: Route Number
+      description: The bus route number to track
+      required: true
+      selector:
+        text:
+    origin:
+      name: Origin
+      description: Origin coordinates (latitude,longitude)
+      required: true
+      selector:
+        text:
+    destination:
+      name: Destination
+      description: Destination coordinates (latitude,longitude)
+      required: true
+      selector:
+        text: 

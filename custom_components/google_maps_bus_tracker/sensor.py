@@ -14,12 +14,13 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
     DataUpdateCoordinator,
 )
+from homeassistant.helpers.entity_registry import async_get_registry
 
 from .const import (
     DOMAIN,
@@ -33,21 +34,20 @@ _LOGGER = logging.getLogger(__name__)
 
 # Define entity descriptions
 SENSOR_TYPES = {
+    "stop_name": SensorEntityDescription(
+        key="stop_name",
+        name="Stop Name",
+        icon="mdi:bus-stop",
+    ),
+    "line_number": SensorEntityDescription(
+        key="line_number",
+        name="Line Number",
+        icon="mdi:bus",
+    ),
     "next_departure": SensorEntityDescription(
         key="next_departure",
         name="Next Departure",
         device_class=SensorDeviceClass.TIMESTAMP,
-    ),
-    "arrival_time": SensorEntityDescription(
-        key="arrival_time",
-        name="Arrival Time",
-        device_class=SensorDeviceClass.TIMESTAMP,
-    ),
-    "duration": SensorEntityDescription(
-        key="duration",
-        name="Duration",
-        native_unit_of_measurement="min",
-        state_class=SensorStateClass.MEASUREMENT,
     ),
 }
 
@@ -58,29 +58,93 @@ async def async_setup_entry(
 ) -> None:
     """Set up the Bus Tracker sensor from a config entry."""
     try:
-        origin = config_entry.data[CONF_ORIGIN]
-        destination = config_entry.data[CONF_DESTINATION]
-        route_number = config_entry.data[CONF_ROUTE_NUMBER]
-
         # Get the API instance from hass.data
         api = hass.data[DOMAIN][config_entry.entry_id]["api"]
         if not api:
             raise ValueError("API client not initialized")
 
-        coordinator = BusTrackerCoordinator(
-            hass,
-            api,
-            origin,
-            destination,
-            route_number,
+        # Initialize coordinators storage
+        if "coordinators" not in hass.data[DOMAIN][config_entry.entry_id]:
+            hass.data[DOMAIN][config_entry.entry_id]["coordinators"] = {}
+
+        # Register the service
+        async def async_handle_track_bus(call: ServiceCall) -> None:
+            """Handle the track_bus service call."""
+            route_number = call.data.get(CONF_ROUTE_NUMBER)
+            origin = call.data.get(CONF_ORIGIN)
+            destination = call.data.get(CONF_DESTINATION)
+
+            if not all([route_number, origin, destination]):
+                _LOGGER.error("Missing required parameters")
+                return
+
+            # Check if we already have a coordinator for this route
+            if route_number in hass.data[DOMAIN][config_entry.entry_id]["coordinators"]:
+                _LOGGER.warning("Bus route %s is already being tracked", route_number)
+                return
+
+            # Create coordinator for this bus route
+            coordinator = BusTrackerCoordinator(
+                hass,
+                api,
+                origin,
+                destination,
+                route_number,
+            )
+
+            await coordinator.async_config_entry_first_refresh()
+
+            # Create entities for this bus route
+            entities = [
+                BusTrackerSensor(coordinator, description)
+                for description in SENSOR_TYPES.values()
+            ]
+
+            # Add entities to Home Assistant
+            async_add_entities(entities)
+
+            # Store coordinator in hass.data
+            hass.data[DOMAIN][config_entry.entry_id]["coordinators"][route_number] = coordinator
+
+            _LOGGER.info("Started tracking bus route %s", route_number)
+
+        # Register the service
+        hass.services.async_register(
+            DOMAIN,
+            "track_bus",
+            async_handle_track_bus,
         )
 
-        await coordinator.async_config_entry_first_refresh()
+        # Register service to remove bus tracking
+        async def async_handle_untrack_bus(call: ServiceCall) -> None:
+            """Handle the untrack_bus service call."""
+            route_number = call.data.get(CONF_ROUTE_NUMBER)
+            if not route_number:
+                _LOGGER.error("Missing route number")
+                return
 
-        async_add_entities(
-            BusTrackerSensor(coordinator, description)
-            for description in SENSOR_TYPES.values()
+            # Get the entity registry
+            registry = await async_get_registry(hass)
+            
+            # Remove all entities for this route
+            for sensor_type in SENSOR_TYPES:
+                entity_id = f"sensor.bus_{route_number}_{sensor_type}"
+                if entity := registry.async_get(entity_id):
+                    registry.async_remove(entity.entity_id)
+
+            # Remove coordinator
+            if route_number in hass.data[DOMAIN][config_entry.entry_id]["coordinators"]:
+                coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinators"][route_number]
+                await coordinator.async_shutdown()
+                hass.data[DOMAIN][config_entry.entry_id]["coordinators"].pop(route_number)
+                _LOGGER.info("Stopped tracking bus route %s", route_number)
+
+        hass.services.async_register(
+            DOMAIN,
+            "untrack_bus",
+            async_handle_untrack_bus,
         )
+
     except Exception as err:
         _LOGGER.error("Error setting up Bus Tracker sensors: %s", err)
         raise
@@ -162,7 +226,6 @@ class BusTrackerCoordinator(DataUpdateCoordinator):
 
             transit_details = bus_step.get("transit_details", {})
             departure_stop = transit_details.get("departure_stop", {})
-            arrival_stop = transit_details.get("arrival_stop", {})
             line = transit_details.get("line", {})
 
             # Get departure time
@@ -176,33 +239,10 @@ class BusTrackerCoordinator(DataUpdateCoordinator):
                 except (ValueError, TypeError) as err:
                     _LOGGER.error("Error parsing departure time: %s", err)
 
-            # Get arrival time
-            arrival_time = transit_details.get("arrival_time", {})
-            arrival_timestamp = arrival_time.get("value")
-            arrival_dt = None
-            if arrival_timestamp:
-                try:
-                    arrival_dt = datetime.fromtimestamp(arrival_timestamp, tz=ZoneInfo("UTC"))
-                    arrival_dt = arrival_dt.astimezone(dt_util.get_time_zone("Europe/Amsterdam"))
-                except (ValueError, TypeError) as err:
-                    _LOGGER.error("Error parsing arrival time: %s", err)
-
-            # Calculate duration in minutes
-            duration = None
-            if leg.get("duration"):
-                try:
-                    duration = int(leg["duration"]["value"] / 60)
-                except (ValueError, TypeError, KeyError) as err:
-                    _LOGGER.error("Error calculating duration: %s", err)
-
             return {
-                "next_departure": departure_dt,
-                "arrival_time": arrival_dt,
-                "duration": duration,
-                "departure_stop": departure_stop.get("name", "Unknown"),
-                "arrival_stop": arrival_stop.get("name", "Unknown"),
-                "line_name": line.get("name", "Unknown"),
+                "stop_name": departure_stop.get("name", "Unknown"),
                 "line_number": line.get("short_name", "Unknown"),
+                "next_departure": departure_dt,
             }
         except Exception as err:
             _LOGGER.error("Error extracting bus info: %s", err)
@@ -256,8 +296,5 @@ class BusTrackerSensor(CoordinatorEntity, SensorEntity):
             return {}
 
         return {
-            "departure_stop": self.coordinator.data.get("departure_stop"),
-            "arrival_stop": self.coordinator.data.get("arrival_stop"),
-            "line_name": self.coordinator.data.get("line_name"),
-            "line_number": self.coordinator.data.get("line_number"),
+            "route_number": self.coordinator.route_number,
         } 
