@@ -2,55 +2,62 @@
 from __future__ import annotations
 
 import logging
+from typing import Any, Dict
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import config_validation as cv
+import voluptuous as vol
 
 from .const import DOMAIN
 from .api import GoogleMapsAPI
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = ["sensor"]
+CONFIG_SCHEMA = vol.Schema({})
+
+PLATFORMS = [Platform.SENSOR]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Google Maps Bus Tracker from a config entry."""
     try:
-        # Store the API key in hass.data
+        # Initialize API client
+        api = GoogleMapsAPI(hass, entry.data)
+        await api.initialize()
+
+        # Store API client in hass.data
         hass.data.setdefault(DOMAIN, {})
-        hass.data[DOMAIN][entry.entry_id] = {}
+        hass.data[DOMAIN][entry.entry_id] = {"api": api}
 
-        # Initialize the API client
-        api_key = entry.data.get("api_key")
-        if not api_key:
-            raise ValueError("API key is required")
-        
-        api = GoogleMapsAPI(api_key)
-        hass.data[DOMAIN][entry.entry_id]["api"] = api
-
+        # Load platforms
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+        # Load services
+        hass.services.async_register(
+            DOMAIN,
+            "reload",
+            lambda call: hass.config_entries.async_reload(entry.entry_id),
+        )
+
         return True
     except Exception as err:
         _LOGGER.error("Error setting up Google Maps Bus Tracker: %s", err)
-        raise ConfigEntryNotReady from err
+        return False
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    if unload_ok:
-        # Clean up API session
-        if api := hass.data[DOMAIN][entry.entry_id].get("api"):
-            await api.close()
-        
-        # Clean up coordinators
-        if coordinators := hass.data[DOMAIN][entry.entry_id].get("coordinators"):
-            for coordinator in coordinators.values():
-                await coordinator.async_shutdown()
-        
-        # Remove service
-        hass.services.async_remove(DOMAIN, "track_bus")
-        
-        hass.data[DOMAIN].pop(entry.entry_id)
+    try:
+        # Unload platforms
+        unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
-    return unload_ok 
+        # Clean up API client
+        if entry.entry_id in hass.data[DOMAIN]:
+            api = hass.data[DOMAIN][entry.entry_id]["api"]
+            await api.cleanup()
+            hass.data[DOMAIN].pop(entry.entry_id)
+
+        return unload_ok
+    except Exception as err:
+        _LOGGER.error("Error unloading Google Maps Bus Tracker: %s", err)
+        return False 

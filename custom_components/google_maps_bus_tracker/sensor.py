@@ -99,7 +99,7 @@ async def async_setup_entry(
 
         _LOGGER.info("Created entities for bus route %s", route_number)
 
-        # Register the service
+        # Register services
         async def async_handle_track_bus(call: ServiceCall) -> None:
             """Handle the track_bus service call."""
             route_number = call.data.get(CONF_ROUTE_NUMBER)
@@ -138,14 +138,6 @@ async def async_setup_entry(
 
             _LOGGER.info("Started tracking bus route %s", route_number)
 
-        # Register the service
-        hass.services.async_register(
-            DOMAIN,
-            "track_bus",
-            async_handle_track_bus,
-        )
-
-        # Register service to remove bus tracking
         async def async_handle_untrack_bus(call: ServiceCall) -> None:
             """Handle the untrack_bus service call."""
             route_number = call.data.get(CONF_ROUTE_NUMBER)
@@ -168,6 +160,13 @@ async def async_setup_entry(
                 await coordinator.async_shutdown()
                 hass.data[DOMAIN][config_entry.entry_id]["coordinators"].pop(route_number)
                 _LOGGER.info("Stopped tracking bus route %s", route_number)
+
+        # Register services
+        hass.services.async_register(
+            DOMAIN,
+            "track_bus",
+            async_handle_track_bus,
+        )
 
         hass.services.async_register(
             DOMAIN,

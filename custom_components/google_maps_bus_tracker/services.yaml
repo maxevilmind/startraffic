@@ -23,3 +23,33 @@ google_maps_bus_tracker:
       required: true
       selector:
         text: 
+
+track_bus:
+  name: Track Bus
+  description: Start tracking a new bus route
+  fields:
+    route_number:
+      name: Route Number
+      description: The bus route number to track
+      required: true
+      example: "123"
+    origin:
+      name: Origin
+      description: The origin coordinates or address
+      required: true
+      example: "52.3676, 4.9041"
+    destination:
+      name: Destination
+      description: The destination coordinates or address
+      required: true
+      example: "52.3676, 4.9041"
+
+untrack_bus:
+  name: Untrack Bus
+  description: Stop tracking a bus route
+  fields:
+    route_number:
+      name: Route Number
+      description: The bus route number to stop tracking
+      required: true
+      example: "123" 
