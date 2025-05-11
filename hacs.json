@@ -1,0 +1,9 @@
+{
+    "name": "Google Maps Bus Tracker",
+    "render_readme": true,
+    "domains": ["sensor"],
+    "homeassistant": "2023.1.0",
+    "iot_class": "Cloud Polling",
+    "description": "Real-time bus arrival tracking using Google Maps API",
+    "keywords": ["bus", "transit", "transportation", "schedule", "arrival", "google maps", "public transport", "commute", "ov", "ns"]
+} 
