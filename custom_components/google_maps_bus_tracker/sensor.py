@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from zoneinfo import ZoneInfo
 
 import homeassistant.util.dt as dt_util
@@ -28,6 +28,7 @@ from .const import (
     CONF_DESTINATION,
     CONF_ROUTE_NUMBER,
 )
+from .api import GoogleMapsAPI, GoogleMapsAPIError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -57,29 +58,36 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Bus Tracker sensor from a config entry."""
-    api_key = config_entry.data[CONF_API_KEY]
-    origin = config_entry.data[CONF_ORIGIN]
-    destination = config_entry.data[CONF_DESTINATION]
-    route_number = config_entry.data[CONF_ROUTE_NUMBER]
+    try:
+        api_key = config_entry.data[CONF_API_KEY]
+        origin = config_entry.data[CONF_ORIGIN]
+        destination = config_entry.data[CONF_DESTINATION]
+        route_number = config_entry.data[CONF_ROUTE_NUMBER]
 
-    api = GoogleMapsAPI(api_key)
-    coordinator = BusTrackerCoordinator(
-        hass,
-        api,
-        origin,
-        destination,
-        route_number,
-    )
+        api = GoogleMapsAPI(api_key)
+        coordinator = BusTrackerCoordinator(
+            hass,
+            api,
+            origin,
+            destination,
+            route_number,
+        )
 
-    await coordinator.async_config_entry_first_refresh()
+        await coordinator.async_config_entry_first_refresh()
 
-    async_add_entities(
-        BusTrackerSensor(coordinator, description)
-        for description in SENSOR_TYPES.values()
-    )
+        async_add_entities(
+            BusTrackerSensor(coordinator, description)
+            for description in SENSOR_TYPES.values()
+        )
+
+        # Store the API instance for cleanup
+        hass.data[DOMAIN][config_entry.entry_id]["api"] = api
+    except Exception as err:
+        _LOGGER.error("Error setting up Bus Tracker sensors: %s", err)
+        raise
 
 class BusTrackerCoordinator(DataUpdateCoordinator):
-    """My custom coordinator."""
+    """Coordinator for Bus Tracker data."""
 
     def __init__(
         self,
@@ -89,11 +97,19 @@ class BusTrackerCoordinator(DataUpdateCoordinator):
         destination: str,
         route_number: str,
     ) -> None:
-        """Initialize my coordinator."""
+        """Initialize the coordinator.
+        
+        Args:
+            hass: Home Assistant instance
+            api: Google Maps API client
+            origin: Origin coordinates
+            destination: Destination coordinates
+            route_number: Bus route number
+        """
         super().__init__(
             hass,
             _LOGGER,
-            name="Bus Tracker",
+            name=f"Bus {route_number} Tracker",
             update_interval=timedelta(minutes=1),
         )
         self.api = api
@@ -110,14 +126,25 @@ class BusTrackerCoordinator(DataUpdateCoordinator):
                 self.route_number,
             )
             return self._extract_bus_info(response)
+        except GoogleMapsAPIError as err:
+            _LOGGER.error("API error: %s", err)
+            return {}
         except Exception as err:
-            _LOGGER.error("Error fetching bus data: %s", err)
+            _LOGGER.error("Unexpected error: %s", err)
             return {}
 
     def _extract_bus_info(self, response: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract relevant bus information from the API response."""
+        """Extract relevant bus information from the API response.
+        
+        Args:
+            response: API response data
+            
+        Returns:
+            Dict containing extracted bus information
+        """
         try:
             if not response.get("routes"):
+                _LOGGER.debug("No routes found in response")
                 return {}
 
             route = response["routes"][0]
@@ -131,6 +158,7 @@ class BusTrackerCoordinator(DataUpdateCoordinator):
             )
 
             if not bus_step:
+                _LOGGER.debug("No bus transit found in route")
                 return {}
 
             transit_details = bus_step.get("transit_details", {})
@@ -141,23 +169,32 @@ class BusTrackerCoordinator(DataUpdateCoordinator):
             # Get departure time
             departure_time = transit_details.get("departure_time", {})
             departure_timestamp = departure_time.get("value")
+            departure_dt = None
             if departure_timestamp:
-                departure_dt = datetime.fromtimestamp(departure_timestamp, tz=ZoneInfo("UTC"))
-                departure_dt = departure_dt.astimezone(dt_util.get_time_zone("Europe/Amsterdam"))
-            else:
-                departure_dt = None
+                try:
+                    departure_dt = datetime.fromtimestamp(departure_timestamp, tz=ZoneInfo("UTC"))
+                    departure_dt = departure_dt.astimezone(dt_util.get_time_zone("Europe/Amsterdam"))
+                except (ValueError, TypeError) as err:
+                    _LOGGER.error("Error parsing departure time: %s", err)
 
             # Get arrival time
             arrival_time = transit_details.get("arrival_time", {})
             arrival_timestamp = arrival_time.get("value")
+            arrival_dt = None
             if arrival_timestamp:
-                arrival_dt = datetime.fromtimestamp(arrival_timestamp, tz=ZoneInfo("UTC"))
-                arrival_dt = arrival_dt.astimezone(dt_util.get_time_zone("Europe/Amsterdam"))
-            else:
-                arrival_dt = None
+                try:
+                    arrival_dt = datetime.fromtimestamp(arrival_timestamp, tz=ZoneInfo("UTC"))
+                    arrival_dt = arrival_dt.astimezone(dt_util.get_time_zone("Europe/Amsterdam"))
+                except (ValueError, TypeError) as err:
+                    _LOGGER.error("Error parsing arrival time: %s", err)
 
             # Calculate duration in minutes
-            duration = int(leg["duration"]["value"] / 60) if leg.get("duration") else None
+            duration = None
+            if leg.get("duration"):
+                try:
+                    duration = int(leg["duration"]["value"] / 60)
+                except (ValueError, TypeError, KeyError) as err:
+                    _LOGGER.error("Error calculating duration: %s", err)
 
             return {
                 "next_departure": departure_dt,
@@ -180,7 +217,12 @@ class BusTrackerSensor(CoordinatorEntity, SensorEntity):
         coordinator: BusTrackerCoordinator,
         description: SensorEntityDescription,
     ) -> None:
-        """Initialize the sensor."""
+        """Initialize the sensor.
+        
+        Args:
+            coordinator: The coordinator for this sensor
+            description: The sensor description
+        """
         super().__init__(coordinator)
         self.entity_description = description
         self._attr_unique_id = f"{coordinator.route_number}_{description.key}"
@@ -202,7 +244,8 @@ class BusTrackerSensor(CoordinatorEntity, SensorEntity):
                 return value
             try:
                 return dt_util.parse_datetime(str(value))
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as err:
+                _LOGGER.error("Error parsing timestamp: %s", err)
                 return None
 
         return value
