@@ -8,7 +8,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN
+from .const import DOMAIN, CONF_API_KEY
 from .api import GoogleMapsAPI
 
 _LOGGER = logging.getLogger(__name__)
@@ -19,7 +19,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Google Maps Bus Tracker from a config entry."""
     try:
         # Initialize API client
-        api = GoogleMapsAPI(hass, entry.data)
+        api_key = entry.data.get(CONF_API_KEY)
+        if not api_key:
+            raise ValueError("API key is required")
+            
+        api = GoogleMapsAPI(api_key)
         await api.initialize()
 
         # Store API client in hass.data

@@ -28,6 +28,10 @@ class GoogleMapsAPI:
         self.api_key = api_key
         self._session: Optional[aiohttp.ClientSession] = None
 
+    async def initialize(self) -> None:
+        """Initialize the API client by creating a session."""
+        await self._get_session()
+
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create an aiohttp session.
         
@@ -94,8 +98,8 @@ class GoogleMapsAPI:
             _LOGGER.error(error_message)
             raise GoogleMapsAPIError(error_message) from err
 
-    async def close(self) -> None:
-        """Close the aiohttp session."""
+    async def cleanup(self) -> None:
+        """Clean up resources by closing the aiohttp session."""
         if self._session and not self._session.closed:
             await self._session.close()
             self._session = None 

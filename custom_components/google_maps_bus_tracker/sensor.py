@@ -25,6 +25,7 @@ from .const import (
     CONF_ORIGIN,
     CONF_DESTINATION,
     CONF_ROUTE_NUMBER,
+    DEFAULT_SCAN_INTERVAL,
 )
 from .api import GoogleMapsAPIError
 
@@ -110,7 +111,7 @@ class BusTrackerCoordinator(DataUpdateCoordinator):
             hass,
             _LOGGER,
             name=f"Bus {route_number} Tracker",
-            update_interval=timedelta(minutes=1),
+            update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL),
         )
         self.api = api
         self.origin = origin
@@ -165,7 +166,7 @@ class BusTrackerCoordinator(DataUpdateCoordinator):
             if departure_timestamp:
                 try:
                     departure_dt = datetime.fromtimestamp(departure_timestamp, tz=ZoneInfo("UTC"))
-                    departure_dt = departure_dt.astimezone(dt_util.get_time_zone("Europe/Amsterdam"))
+                    departure_dt = departure_dt.astimezone(dt_util.get_time_zone(hass.config.time_zone))
                 except (ValueError, TypeError) as err:
                     _LOGGER.error("Error parsing departure time: %s", err)
 
