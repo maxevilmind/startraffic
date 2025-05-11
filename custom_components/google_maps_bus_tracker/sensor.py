@@ -67,6 +67,38 @@ async def async_setup_entry(
         if "coordinators" not in hass.data[DOMAIN][config_entry.entry_id]:
             hass.data[DOMAIN][config_entry.entry_id]["coordinators"] = {}
 
+        # Get configuration from the config entry
+        route_number = config_entry.data.get(CONF_ROUTE_NUMBER)
+        origin = config_entry.data.get(CONF_ORIGIN)
+        destination = config_entry.data.get(CONF_DESTINATION)
+
+        if not all([route_number, origin, destination]):
+            _LOGGER.error("Missing required configuration parameters")
+            return
+
+        # Create coordinator for this bus route
+        coordinator = BusTrackerCoordinator(
+            hass,
+            api,
+            origin,
+            destination,
+            route_number,
+        )
+
+        # Create entities for this bus route
+        entities = [
+            BusTrackerSensor(coordinator, description)
+            for description in SENSOR_TYPES.values()
+        ]
+
+        # Add entities to Home Assistant
+        async_add_entities(entities)
+
+        # Store coordinator in hass.data
+        hass.data[DOMAIN][config_entry.entry_id]["coordinators"][route_number] = coordinator
+
+        _LOGGER.info("Created entities for bus route %s", route_number)
+
         # Register the service
         async def async_handle_track_bus(call: ServiceCall) -> None:
             """Handle the track_bus service call."""
@@ -91,8 +123,6 @@ async def async_setup_entry(
                 destination,
                 route_number,
             )
-
-            await coordinator.async_config_entry_first_refresh()
 
             # Create entities for this bus route
             entities = [
@@ -160,15 +190,7 @@ class BusTrackerCoordinator(DataUpdateCoordinator):
         destination: str,
         route_number: str,
     ) -> None:
-        """Initialize the coordinator.
-        
-        Args:
-            hass: Home Assistant instance
-            api: Google Maps API client
-            origin: Origin coordinates
-            destination: Destination coordinates
-            route_number: Bus route number
-        """
+        """Initialize the coordinator."""
         super().__init__(
             hass,
             _LOGGER,
@@ -197,14 +219,7 @@ class BusTrackerCoordinator(DataUpdateCoordinator):
             return {}
 
     def _extract_bus_info(self, response: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract relevant bus information from the API response.
-        
-        Args:
-            response: API response data
-            
-        Returns:
-            Dict containing extracted bus information
-        """
+        """Extract relevant bus information from the API response."""
         try:
             if not response.get("routes"):
                 _LOGGER.debug("No routes found in response")
@@ -256,12 +271,7 @@ class BusTrackerSensor(CoordinatorEntity, SensorEntity):
         coordinator: BusTrackerCoordinator,
         description: SensorEntityDescription,
     ) -> None:
-        """Initialize the sensor.
-        
-        Args:
-            coordinator: The coordinator for this sensor
-            description: The sensor description
-        """
+        """Initialize the sensor."""
         super().__init__(coordinator)
         self.entity_description = description
         self._attr_unique_id = f"{coordinator.route_number}_{description.key}"
