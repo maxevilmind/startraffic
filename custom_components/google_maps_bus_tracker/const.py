@@ -1,7 +1,9 @@
 """Constants for the Google Maps Bus Tracker integration."""
 
+# Domain name
 DOMAIN = "google_maps_bus_tracker"
 
+# Configuration keys
 CONF_API_KEY = "api_key"
 CONF_ORIGIN = "origin"
 CONF_DESTINATION = "destination"

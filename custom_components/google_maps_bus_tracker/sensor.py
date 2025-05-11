@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
-from typing import Any, Dict, Optional
+from datetime import datetime, timedelta
+from typing import Any, Dict
 from zoneinfo import ZoneInfo
 
 import homeassistant.util.dt as dt_util
@@ -14,12 +14,6 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (
-    CONF_API_KEY,
-    CONF_ORIGIN,
-    CONF_DESTINATION,
-    CONF_ROUTE_NUMBER,
-)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import (
@@ -27,8 +21,13 @@ from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
 )
 
-from .const import DOMAIN
-from .api import GoogleMapsAPI
+from .const import (
+    DOMAIN,
+    CONF_API_KEY,
+    CONF_ORIGIN,
+    CONF_DESTINATION,
+    CONF_ROUTE_NUMBER,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
