@@ -20,7 +20,7 @@ from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
     DataUpdateCoordinator,
 )
-from homeassistant.helpers.entity_registry import async_get_registry
+from homeassistant.helpers import entity_registry as er
 
 from .const import (
     DOMAIN,
@@ -124,7 +124,7 @@ async def async_setup_entry(
                 return
 
             # Get the entity registry
-            registry = await async_get_registry(hass)
+            registry = er.async_get(hass)
             
             # Remove all entities for this route
             for sensor_type in SENSOR_TYPES:
