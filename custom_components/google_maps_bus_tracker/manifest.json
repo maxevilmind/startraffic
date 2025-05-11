@@ -8,5 +8,5 @@
   "version": "3.0.0",
   "config_flow": true,
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/maxevilmind/startraffic/issues",
+  "issue_tracker": "https://github.com/maxevilmind/startraffic/issues"
 } 
