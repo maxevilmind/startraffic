@@ -3,24 +3,22 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import homeassistant.util.dt as dt_util
 from homeassistant.components.sensor import (
     SensorEntity,
     SensorDeviceClass,
-    SensorStateClass,
     SensorEntityDescription,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
     DataUpdateCoordinator,
 )
-from homeassistant.helpers import entity_registry as er
 
 from .const import (
     DOMAIN,
@@ -63,10 +61,6 @@ async def async_setup_entry(
         if not api:
             raise ValueError("API client not initialized")
 
-        # Initialize coordinators storage
-        if "coordinators" not in hass.data[DOMAIN][config_entry.entry_id]:
-            hass.data[DOMAIN][config_entry.entry_id]["coordinators"] = {}
-
         # Get configuration from the config entry
         route_number = config_entry.data.get(CONF_ROUTE_NUMBER)
         origin = config_entry.data.get(CONF_ORIGIN)
@@ -75,12 +69,6 @@ async def async_setup_entry(
         if not all([route_number, origin, destination]):
             _LOGGER.error("Missing required configuration parameters")
             return
-
-        # Store bus route in hass.data
-        hass.data[DOMAIN][config_entry.entry_id]["bus_routes"][route_number] = {
-            CONF_ORIGIN: origin,
-            CONF_DESTINATION: destination,
-        }
 
         # Create coordinator for this bus route
         coordinator = BusTrackerCoordinator(
@@ -100,43 +88,7 @@ async def async_setup_entry(
         # Add entities to Home Assistant
         async_add_entities(entities)
 
-        # Store coordinator in hass.data
-        hass.data[DOMAIN][config_entry.entry_id]["coordinators"][route_number] = coordinator
-
         _LOGGER.info("Created entities for bus route %s", route_number)
-
-        # Register service for this bus route
-        async def async_handle_bus_route_service(call: ServiceCall) -> None:
-            """Handle service calls for this bus route."""
-            service = call.service
-            if service == "get_info":
-                _LOGGER.info("Bus route %s info: %s", route_number, coordinator.data)
-            elif service == "update_route":
-                if CONF_ORIGIN in call.data:
-                    coordinator.origin = call.data[CONF_ORIGIN]
-                if CONF_DESTINATION in call.data:
-                    coordinator.destination = call.data[CONF_DESTINATION]
-                await coordinator.async_refresh()
-
-        # Register service for this bus route
-        service_name = f"bus_{route_number}"
-        hass.services.async_register(
-            DOMAIN,
-            service_name,
-            async_handle_bus_route_service,
-        )
-
-        # Register the service in the services.yaml
-        hass.services.async_register(
-            DOMAIN,
-            service_name,
-            async_handle_bus_route_service,
-            schema=vol.Schema({
-                vol.Optional("service"): vol.In(["get_info", "update_route"]),
-                vol.Optional(CONF_ORIGIN): cv.string,
-                vol.Optional(CONF_DESTINATION): cv.string,
-            })
-        )
 
     except Exception as err:
         _LOGGER.error("Error setting up Bus Tracker sensors: %s", err)
@@ -165,7 +117,7 @@ class BusTrackerCoordinator(DataUpdateCoordinator):
         self.destination = destination
         self.route_number = route_number
 
-    async def _async_update_data(self) -> Dict[str, Any]:
+    async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from API endpoint."""
         try:
             response = await self.api.get_directions(
@@ -181,7 +133,7 @@ class BusTrackerCoordinator(DataUpdateCoordinator):
             _LOGGER.error("Unexpected error: %s", err)
             return {}
 
-    def _extract_bus_info(self, response: Dict[str, Any]) -> Dict[str, Any]:
+    def _extract_bus_info(self, response: dict[str, Any]) -> dict[str, Any]:
         """Extract relevant bus information from the API response."""
         try:
             if not response.get("routes"):
@@ -263,7 +215,7 @@ class BusTrackerSensor(CoordinatorEntity, SensorEntity):
         return value
 
     @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Return entity specific state attributes."""
         if not self.coordinator.data:
             return {}
