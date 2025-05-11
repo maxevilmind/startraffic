@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Dict, Optional
 from zoneinfo import ZoneInfo
 
@@ -19,7 +19,6 @@ from homeassistant.const import (
     CONF_ORIGIN,
     CONF_DESTINATION,
     CONF_ROUTE_NUMBER,
-    CONF_UPDATE_INTERVAL,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -28,12 +27,7 @@ from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
 )
 
-from .const import (
-    DOMAIN,
-    DEFAULT_SCAN_INTERVAL,
-    MIN_SCAN_INTERVAL,
-    MAX_SCAN_INTERVAL,
-)
+from .const import DOMAIN
 from .api import GoogleMapsAPI
 
 _LOGGER = logging.getLogger(__name__)
@@ -68,10 +62,6 @@ async def async_setup_entry(
     origin = config_entry.data[CONF_ORIGIN]
     destination = config_entry.data[CONF_DESTINATION]
     route_number = config_entry.data[CONF_ROUTE_NUMBER]
-    update_interval = config_entry.data.get(CONF_UPDATE_INTERVAL, DEFAULT_SCAN_INTERVAL)
-
-    # Ensure update interval is within bounds
-    update_interval = max(MIN_SCAN_INTERVAL, min(update_interval, MAX_SCAN_INTERVAL))
 
     api = GoogleMapsAPI(api_key)
     coordinator = BusTrackerCoordinator(
@@ -80,7 +70,6 @@ async def async_setup_entry(
         origin,
         destination,
         route_number,
-        update_interval,
     )
 
     await coordinator.async_config_entry_first_refresh()
@@ -100,20 +89,18 @@ class BusTrackerCoordinator(DataUpdateCoordinator):
         origin: str,
         destination: str,
         route_number: str,
-        update_interval: int,
     ) -> None:
         """Initialize my coordinator."""
         super().__init__(
             hass,
             _LOGGER,
             name="Bus Tracker",
-            update_interval=timedelta(seconds=update_interval),
+            update_interval=timedelta(minutes=1),
         )
         self.api = api
         self.origin = origin
         self.destination = destination
         self.route_number = route_number
-        self.update_interval = update_interval
 
     async def _async_update_data(self) -> Dict[str, Any]:
         """Fetch data from API endpoint."""
@@ -172,16 +159,6 @@ class BusTrackerCoordinator(DataUpdateCoordinator):
 
             # Calculate duration in minutes
             duration = int(leg["duration"]["value"] / 60) if leg.get("duration") else None
-
-            # Adjust update interval based on time until departure
-            if departure_dt:
-                time_until_departure = (departure_dt - dt_util.now()).total_seconds()
-                if time_until_departure < 300:  # Less than 5 minutes
-                    self.update_interval = MIN_SCAN_INTERVAL
-                elif time_until_departure < 900:  # Less than 15 minutes
-                    self.update_interval = 60
-                else:
-                    self.update_interval = MAX_SCAN_INTERVAL
 
             return {
                 "next_departure": departure_dt,
